@@ -1,0 +1,15 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition, type FormEvent } from "react";
+import { ClipboardCheck, X } from "lucide-react";
+import { updateHmoClaim } from "../actions/invoices";
+import { Button } from "@/shared/components/ui/button";
+import { Field } from "@/shared/components/ui/field";
+import { Input } from "@/shared/components/ui/input";
+
+export function HmoClaimDialog({ invoiceId, provider, approvalCode, coveredAmount, status }: { invoiceId: string; provider: string; approvalCode: string | null; coveredAmount: number; status: string | null }) {
+  const router = useRouter(); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [busy, startTransition] = useTransition();
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const input = { invoiceId, provider: String(form.get("provider")), status: String(form.get("status")), approvalCode: String(form.get("approvalCode") ?? ""), coveredAmount: Number(form.get("coveredAmount")) }; startTransition(async () => { const result = await updateHmoClaim(input); if (!result.success) setError(result.error); else { setOpen(false); setError(""); router.refresh(); } }); }
+  return <><button onClick={() => setOpen(true)} className="text-[10px] font-semibold text-sky-800">{status ? "Update claim" : "Add HMO claim"}</button>{open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4"><section className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex justify-between"><div><h2 className="text-lg font-semibold">HMO claim</h2><p className="mt-1 text-sm text-slate-500">Update approval and patient co-pay details.</p></div><button onClick={() => setOpen(false)} className="text-slate-400"><X size={18} /></button></div><form onSubmit={submit} className="grid gap-4"><Field label="HMO provider"><select name="provider" defaultValue={provider === "—" ? "Maxicare" : provider} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm">{["Maxicare", "Intellicare", "Medicard", "PhilCare", "Etiqa"].map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="Claim status"><select name="status" defaultValue={status ?? "PENDING"} className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="PENDING">Pending</option><option value="APPROVED">Approved</option><option value="DENIED">Denied</option><option value="REIMBURSED">Reimbursed</option></select></Field><Field label="Approval code"><Input name="approvalCode" defaultValue={approvalCode ?? ""} placeholder="Required for approval" /></Field><Field label="HMO-covered amount"><Input name="coveredAmount" type="number" min="0" step="0.01" defaultValue={coveredAmount} /></Field>{error && <p className="text-xs text-rose-700">{error}</p>}<Button disabled={busy}><ClipboardCheck size={15} />{busy ? "Saving…" : "Save HMO claim"}</Button></form></section></div>}</>;
+}

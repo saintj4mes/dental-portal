@@ -1,0 +1,25 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useState, useTransition, type FormEvent } from "react";
+import { FilePlus2, Plus, X } from "lucide-react";
+import { createClinicalNote, createTreatmentPlan } from "../actions/clinical";
+import { Button } from "@/shared/components/ui/button";
+import { Field, TextArea } from "@/shared/components/ui/field";
+import { Input } from "@/shared/components/ui/input";
+
+export function ClinicalNoteDialog({ patientId }: { patientId: string }) {
+  const router = useRouter(); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [busy, startTransition] = useTransition();
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const teeth = String(form.get("toothNumbers") ?? "").split(",").map(Number).filter(Number.isFinite); startTransition(async () => { const result = await createClinicalNote({ patientId, subjective: String(form.get("subjective")), objective: String(form.get("objective")), assessment: String(form.get("assessment")), plan: String(form.get("plan")), toothNumbers: teeth }); if (!result.success) setError(result.error); else { setOpen(false); setError(""); router.refresh(); } }); }
+  return <><Button variant="secondary" onClick={() => setOpen(true)}><FilePlus2 size={15} /> New note</Button>{open && <Dialog title="New clinical note" subtitle="Capture the visit in SOAP format." onClose={() => setOpen(false)}><form onSubmit={submit} className="grid gap-3"><Field label="Subjective · patient report"><TextArea name="subjective" required placeholder="Symptoms, concerns and patient history" /></Field><Field label="Objective · findings"><TextArea name="objective" required placeholder="Examination and imaging findings" /></Field><Field label="Assessment"><TextArea name="assessment" required placeholder="Clinical assessment" /></Field><Field label="Plan"><TextArea name="plan" required placeholder="Treatment and follow-up plan" /></Field><Field label="FDI tooth numbers" hint="Optional, comma-separated; e.g. 16, 26"><Input name="toothNumbers" placeholder="16, 26" /></Field>{error && <p className="text-xs text-rose-700">{error}</p>}<Button disabled={busy}>{busy ? "Saving…" : "Save clinical note"}</Button></form></Dialog>}</>;
+}
+
+export function TreatmentPlanDialog({ patientId }: { patientId: string }) {
+  const router = useRouter(); const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [busy, startTransition] = useTransition();
+  function submit(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); const toothText = String(form.get("toothNumbers") ?? ""); const toothNumbers = toothText.split(",").map((entry) => Number(entry.trim())).filter(Number.isFinite); startTransition(async () => { const result = await createTreatmentPlan({ patientId, title: String(form.get("title")), status: "PRESENTED", items: [{ name: String(form.get("treatment")), quantity: Number(form.get("quantity")), unitPrice: Number(form.get("unitPrice")), toothNumbers }] }); if (!result.success) setError(result.error); else { setOpen(false); setError(""); router.refresh(); } }); }
+  return <><button onClick={() => setOpen(true)} className="mt-3 text-xs font-semibold text-sky-800"><Plus size={13} className="mr-1 inline" />Create a plan</button>{open && <Dialog title="New treatment plan" subtitle="Add the first recommended procedure." onClose={() => setOpen(false)}><form onSubmit={submit} className="grid gap-3"><Field label="Plan title"><Input name="title" required placeholder="e.g. Restorative care · Phase 1" /></Field><Field label="Treatment"><Input name="treatment" required placeholder="e.g. Composite restoration" /></Field><div className="grid grid-cols-2 gap-3"><Field label="Quantity"><Input name="quantity" type="number" min="1" defaultValue="1" required /></Field><Field label="Unit price (₱)"><Input name="unitPrice" type="number" min="0" step="0.01" required /></Field></div><Field label="FDI tooth numbers" hint="Optional, comma-separated"><Input name="toothNumbers" placeholder="16, 26" /></Field>{error && <p className="text-xs text-rose-700">{error}</p>}<Button disabled={busy}>{busy ? "Saving…" : "Save treatment plan"}</Button></form></Dialog>}</>;
+}
+
+function Dialog({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
+  return <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}><section className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex justify-between"><div><h2 className="text-lg font-semibold">{title}</h2><p className="mt-1 text-sm text-slate-500">{subtitle}</p></div><button onClick={onClose} className="text-slate-400"><X size={18} /></button></div>{children}</section></div>;
+}

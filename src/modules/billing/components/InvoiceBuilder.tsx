@@ -1,0 +1,38 @@
+"use client";
+
+import { useMemo, useState, useTransition, type FormEvent } from "react";
+import { ArrowRight, Plus, ReceiptText, X } from "lucide-react";
+import { Button } from "@/shared/components/ui/button";
+import { Field } from "@/shared/components/ui/field";
+import { Input } from "@/shared/components/ui/input";
+import { formatPHP } from "@/shared/lib/formatters";
+import { calculatePhilippineInvoice, type DiscountType } from "../lib/tax-calculator";
+import { createInvoice } from "../actions/invoices";
+
+export interface InvoicePatientChoice { id: string; name: string; seniorPwdId: string | null; }
+export function InvoiceBuilder({ patients, isVatRegistered }: { patients: InvoicePatientChoice[]; isVatRegistered: boolean }) {
+  const [open, setOpen] = useState(false); const [error, setError] = useState(""); const [busy, startTransition] = useTransition();
+  const [selectedPatientId, setSelectedPatientId] = useState("");
+  const [gross, setGross] = useState(2500); const [vat, setVat] = useState(isVatRegistered); const [discount, setDiscount] = useState<DiscountType>("NONE"); const [hmo, setHmo] = useState(0); const [idNo, setIdNo] = useState(""); const [customRate, setCustomRate] = useState(0);
+  const preview = useMemo(() => { try { return calculatePhilippineInvoice({ grossAmount: gross || 0, isVatRegistered, isVatInclusive: vat, discountType: discount, seniorPwdId: idNo, customDiscountPercent: customRate, hmoCoveredAmount: hmo }); } catch { return null; } }, [gross, vat, discount, idNo, customRate, hmo, isVatRegistered]);
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); const form = new FormData(event.currentTarget);
+    const subtotal = Number(form.get("subtotal"));
+    const data = { patientId: String(form.get("patientId")), subtotal, lineItems: [{ description: String(form.get("description") ?? "Dental service"), quantity: 1, unitPrice: subtotal }], isVatInclusive: vat, discountType: discount, seniorPwdId: idNo, customDiscountPercent: customRate, hmoProvider: String(form.get("hmoProvider") ?? ""), hmoApprovalCode: String(form.get("hmoApprovalCode") ?? ""), hmoCoveredAmount: hmo };
+    startTransition(async () => { const result = await createInvoice(data); if (!result.success) setError(result.error); else { setOpen(false); setError(""); } });
+  }
+  return <><Button onClick={() => setOpen(true)}><Plus size={15} /> Create invoice</Button>{open && <div className="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 p-4" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}><section className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl"><div className="mb-5 flex items-start justify-between"><div><h2 className="text-lg font-semibold">New invoice</h2><p className="mt-1 text-sm text-slate-500">Tax and statutory discount are calculated automatically.</p></div><button onClick={() => setOpen(false)} className="text-slate-400"><X size={18} /></button></div><form onSubmit={submit} className="grid gap-5 md:grid-cols-[1fr_0.85fr]">
+    <div className="space-y-4"><Field label="Patient"><select required name="patientId" value={selectedPatientId} onChange={(event) => { setSelectedPatientId(event.target.value); setIdNo(patients.find((patient) => patient.id === event.target.value)?.seniorPwdId ?? ""); }} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="">Choose patient</option>{patients.map((patient) => <option key={patient.id} value={patient.id}>{patient.name}</option>)}</select></Field>
+      <Field label="Service description"><Input required name="description" defaultValue="Dental treatment" placeholder="e.g. Cleaning & polishing" /></Field><Field label="Service amount"><Input required name="subtotal" type="number" min="0.01" step="0.01" value={gross} onChange={(event) => setGross(Number(event.target.value))} /></Field>
+      {isVatRegistered ? <label className="flex items-center justify-between rounded-xl border border-slate-200 px-3 py-2.5"><span><span className="block text-xs font-semibold">VAT-inclusive pricing</span><span className="mt-0.5 block text-[10px] text-slate-400">12% VAT included in the amount</span></span><input type="checkbox" checked={vat} onChange={(event) => setVat(event.target.checked)} className="h-4 w-4 accent-sky-700" /></label> : <p className="rounded-xl bg-slate-50 px-3 py-2.5 text-xs text-slate-500">Non-VAT registered · no VAT added</p>}
+      <Field label="Discount"><select value={discount} onChange={(event) => setDiscount(event.target.value as DiscountType)} className="h-10 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm"><option value="NONE">No discount</option><option value="SENIOR_CITIZEN">Senior Citizen · 20%</option><option value="PWD">PWD · 20%</option><option value="CUSTOM">Custom discount</option></select></Field>
+      {discount === "CUSTOM" && <Field label="Custom discount (%)"><Input type="number" min="0" max="100" value={customRate} onChange={(event) => setCustomRate(Number(event.target.value))} /></Field>}
+      {(discount === "SENIOR_CITIZEN" || discount === "PWD") && <Field label="Senior Citizen / PWD ID number"><Input required value={idNo} onChange={(event) => setIdNo(event.target.value)} placeholder="ID number required" /></Field>}
+      <div className="grid grid-cols-2 gap-3"><Field label="HMO provider"><select name="hmoProvider" className="h-10 rounded-xl border border-slate-200 bg-white px-2 text-xs"><option value="">None</option>{["Maxicare", "Intellicare", "Medicard", "PhilCare", "Etiqa"].map((item) => <option key={item}>{item}</option>)}</select></Field><Field label="HMO covered (₱)"><Input type="number" min="0" step="0.01" value={hmo} onChange={(event) => setHmo(Number(event.target.value))} /></Field></div>
+      {hmo > 0 && <Field label="HMO approval code"><Input name="hmoApprovalCode" placeholder="Approval code" /></Field>}
+    </div>
+    <div className="flex flex-col rounded-2xl bg-[#f5f8f8] p-4"><div className="flex items-center gap-2 text-xs font-semibold"><ReceiptText size={15} className="text-sky-700" /> Invoice summary</div><div className="mt-5 space-y-3 text-xs"><Row label="Gross amount" value={formatPHP(gross || 0)} /><Row label="VAT base" value={formatPHP(preview?.vatBase ?? 0)} /><Row label={preview?.vatExempt ? "VAT · exempt" : "VAT · 12%"} value={formatPHP(preview?.vatAmount ?? 0)} /><Row label={`${discount === "SENIOR_CITIZEN" ? "Senior Citizen" : discount === "PWD" ? "PWD" : "Discount"}`} value={`− ${formatPHP(preview?.discountAmount ?? 0)}`} /><Row label="HMO coverage" value={`− ${formatPHP(preview?.hmoCoveredAmount ?? 0)}`} /></div><div className="mt-auto border-t border-slate-200 pt-4"><div className="flex items-end justify-between"><span className="text-xs font-semibold text-slate-600">Patient co-pay</span><strong className="text-xl text-slate-900">{formatPHP(preview?.patientCoPay ?? 0)}</strong></div>{preview?.vatExempt && <p className="mt-2 text-[10px] leading-4 text-sky-800">VAT-exempt statutory discount applied. ID will be recorded on the invoice.</p>}</div></div>
+    {error && <p className="rounded-xl bg-rose-50 p-3 text-xs text-rose-700 md:col-span-2">{error}</p>}<div className="flex justify-end gap-2 md:col-span-2"><Button type="button" variant="secondary" onClick={() => setOpen(false)}>Cancel</Button><Button disabled={busy}>{busy ? "Creating…" : "Create invoice"}<ArrowRight size={14} /></Button></div>
+  </form></section></div>}</>;
+}
+function Row({ label, value }: { label: string; value: string }) { return <div className="flex justify-between gap-3 text-slate-500"><span>{label}</span><span className="font-medium text-slate-700">{value}</span></div>; }
